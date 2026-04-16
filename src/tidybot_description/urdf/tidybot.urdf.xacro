@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  TidyBot top-level xacro.
+  Step 1: base + 4 wheels only. Torso, arms, face, sensors, controllers
+  will be included as separate xacros once base stability is verified.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tidybot">
+
+  <xacro:include filename="$(find tidybot_description)/urdf/inertials.xacro"/>
+  <xacro:include filename="$(find tidybot_description)/urdf/base.xacro"/>
+  <xacro:include filename="$(find tidybot_description)/urdf/arm.xacro"/>
+  <xacro:include filename="$(find tidybot_description)/urdf/torso.xacro"/>
+  <xacro:include filename="$(find tidybot_description)/urdf/sensors.xacro"/>
+  <xacro:include filename="$(find tidybot_description)/urdf/ros2_control.xacro"/>
+
+</robot>

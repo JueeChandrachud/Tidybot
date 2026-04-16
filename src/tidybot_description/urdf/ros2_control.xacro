@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!--
+  Differential-drive control for TidyBot.
+
+  We use the Gazebo-native libgazebo_ros_diff_drive plugin rather than
+  ros2_control + diff_drive_controller because Humble's
+  gazebo_ros2_control plugin has a known bug passing large URDFs via
+  CLI param overrides (parser truncates), and fighting it costs
+  more than the abstraction buys us for wheeled locomotion.
+
+  Skid-steer is treated as diff-drive by slaving front+rear wheels on
+  each side to the same velocity (wheel_separation accounts for the
+  left/right pair spacing).
+
+  Publishes:
+    /odom           nav_msgs/Odometry  at 50 Hz
+    odom -> base_footprint tf
+
+  Subscribes:
+    /cmd_vel        geometry_msgs/Twist
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <gazebo>
+    <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <!-- Default topic names: /cmd_vel, /odom. Namespace left root. -->
+      </ros>
+
+      <update_rate>50</update_rate>
+
+      <!-- Two wheel pairs. The plugin treats them as 4 independent
+           wheels but slaves front+rear on each side. -->
+      <num_wheel_pairs>2</num_wheel_pairs>
+
+      <left_joint>wheel_fl_joint</left_joint>
+      <right_joint>wheel_fr_joint</right_joint>
+      <left_joint>wheel_rl_joint</left_joint>
+      <right_joint>wheel_rr_joint</right_joint>
+
+      <!-- Wheel geometry (mirrors base.xacro). -->
+      <wheel_separation>0.40</wheel_separation>
+      <wheel_separation>0.40</wheel_separation>
+      <wheel_diameter>0.16</wheel_diameter>
+      <wheel_diameter>0.16</wheel_diameter>
+
+      <!-- Velocity/acceleration caps. -->
+      <max_wheel_torque>20.0</max_wheel_torque>
+      <max_wheel_acceleration>2.0</max_wheel_acceleration>
+
+      <!-- Frame IDs match the rest of the tf tree and Nav2 defaults. -->
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+
+      <publish_odom>true</publish_odom>
+      <!-- EKF (robot_localization) owns odom->base_footprint now.
+           Two publishers on the same tf = flapping, so plugin stops. -->
+      <publish_odom_tf>false</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+    </plugin>
+  </gazebo>
+
+</robot>

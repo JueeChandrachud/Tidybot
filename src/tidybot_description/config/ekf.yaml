@@ -1,0 +1,59 @@
+# robot_localization EKF for TidyBot.
+#
+# Fuses two inputs:
+#   /odom  (wheel odometry from libgazebo_ros_diff_drive)
+#   /imu   (gazebo_ros_imu_sensor)
+#
+# Output:
+#   /odometry/filtered         (nav_msgs/Odometry)
+#   tf: odom -> base_footprint (replaces the diff-drive plugin's tf)
+#
+# Config-selector matrices are 15 booleans, ordered:
+#   [ x,     y,     z,
+#     roll,  pitch, yaw,
+#     vx,    vy,    vz,
+#     vroll, vpitch,vyaw,
+#     ax,    ay,    az ]
+#
+# For /odom we take velocities only (vx, vy, vyaw). Feeding absolute
+# pose back into an EKF that integrates velocity creates correlated
+# noise and a positive-feedback loop.
+# For /imu we take yaw rate + horizontal accelerations. Ignoring the
+# IMU's absolute orientation estimate because it's computed from a
+# noisy gravity vector we don't need (we're planar, z is known).
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    two_d_mode: true
+    publish_tf: true
+
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # -------- wheel odometry --------
+    odom0: /odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+
+    # -------- IMU --------
+    imu0: /imu
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  true,  true,  false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    print_diagnostics: false
+    debug: false

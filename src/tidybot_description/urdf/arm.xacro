@@ -1,0 +1,282 @@
+<?xml version="1.0"?>
+<!--
+  3-DOF planar arm + parallel-jaw gripper, as a reusable macro.
+
+  Kinematics (at zero pose, arm hangs straight down along -Z):
+    shoulder (rev Y)  @ torso side
+      → upper_arm      (cyl along Z, length 0.25)
+    elbow    (rev Y)
+      → forearm        (cyl along Z, length 0.25)
+    wrist    (rev Y)
+      → wrist_link     (cyl along Z, length 0.08)
+    gripper_base (fixed)
+      → left_finger  (prismatic, opens +Y)
+      → right_finger (prismatic, opens -Y)
+
+  Macro parameters:
+    side       : "right" | "left"  — flips sign of Y mount position
+    functional : true  → revolute joints (driveable)
+                 false → fixed joints (cosmetic arm still with collision/visual)
+
+  Densities (kg/m^3):
+    arm links   500  (hollow aluminum tube approximation)
+    gripper base 500
+    fingers     700  (solid printed plastic)
+
+  Reach: 0.25 + 0.25 + 0.08 + gripper ≈ 0.61 m from shoulder.
+  Shoulder world-z ≈ 0.525 m, so end-effector can touch ground plane.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== Arm link dimensions ===== -->
+  <xacro:property name="upper_r"  value="0.025"/>
+  <xacro:property name="upper_l"  value="0.375"/>  <!-- 1.5x longer -->
+
+  <xacro:property name="fore_r"   value="0.022"/>
+  <xacro:property name="fore_l"   value="0.25"/>
+  <xacro:property name="wrist_r"  value="0.02"/>
+  <xacro:property name="wrist_l"  value="0.08"/>
+  <xacro:property name="arm_density" value="500"/>
+
+  <!-- ===== Gripper dimensions ===== -->
+  <xacro:property name="grip_x"   value="0.08"/>
+  <xacro:property name="grip_y"   value="0.10"/>
+  <xacro:property name="grip_z"   value="0.03"/>
+  <xacro:property name="grip_density" value="500"/>
+
+  <xacro:property name="finger_x" value="0.01"/>
+  <xacro:property name="finger_y" value="0.015"/>
+  <xacro:property name="finger_z" value="0.06"/>
+  <xacro:property name="finger_density" value="700"/>
+  <xacro:property name="finger_travel" value="0.025"/>
+  <xacro:property name="finger_y0"     value="0.020"/>  <!-- closed offset -->
+
+  <!-- ===== Materials ===== -->
+  <material name="arm_silver"><color rgba="0.75 0.75 0.78 1.0"/></material>
+  <material name="arm_cosmetic"><color rgba="0.50 0.50 0.55 1.0"/></material>
+  <material name="gripper_orange"><color rgba="0.90 0.45 0.10 1.0"/></material>
+
+  <!-- ===== Arm macro =====
+       mount_xyz      : origin in torso frame where shoulder mounts
+       home_shoulder  : pre-rotation of shoulder about Y (radians)
+       home_elbow     : pre-rotation of elbow about Y
+       home_wrist     : pre-rotation of wrist about Y
+
+       Home pose is baked into each joint's origin rpy. Since all three
+       joint axes are Y, a Y-rotation of the origin frame does NOT change
+       the axis direction (R_Y * y_hat = y_hat), so the joints still
+       rotate about parent Y — but the "joint = 0" configuration becomes
+       the home pose rather than arm-hanging-down. This is what lets both
+       arms look natural at spawn without needing a position controller.
+  -->
+  <xacro:macro name="arm"
+               params="prefix mount_xyz
+                       home_shoulder:=-1.5708
+                       home_elbow:=-1.5708
+                       home_wrist:=0.0
+                       functional:=true">
+
+    <!-- Joint type chosen at expand time by the functional flag. -->
+    <xacro:property name="jtype" value="${'revolute' if functional else 'fixed'}"/>
+    <xacro:property name="mat"   value="${'arm_silver' if functional else 'arm_cosmetic'}"/>
+
+    <!-- ====== SHOULDER joint + UPPER ARM link ====== -->
+    <joint name="${prefix}_shoulder_joint" type="${jtype}">
+      <parent link="torso_link"/>
+      <child  link="${prefix}_upper_arm_link"/>
+      <origin xyz="${mount_xyz}" rpy="0 ${home_shoulder} 0"/>
+      <axis xyz="0 1 0"/>
+      <xacro:if value="${functional}">
+        <!-- limits span a full forward/up/backward arc around the home -->
+        <limit lower="-2.5" upper="2.5" effort="15.0" velocity="2.0"/>
+        <!-- With 1.5x-longer upper arm, total gravity torque at shoulder
+             in the horizontal-arm home pose is ~2.6 Nm (upper + fore +
+             wrist + gripper). Friction 4.0 Nm gives ~1.5x margin so the
+             arm holds without a position controller. -->
+        <dynamics damping="0.8" friction="4.0"/>
+      </xacro:if>
+    </joint>
+
+    <link name="${prefix}_upper_arm_link">
+      <visual>
+        <origin xyz="0 0 ${-upper_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${upper_r}" length="${upper_l}"/></geometry>
+        <material name="${mat}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-upper_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${upper_r}" length="${upper_l}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder_z
+          mass="${arm_density * pi * upper_r * upper_r * upper_l}"
+          r="${upper_r}" h="${upper_l}">
+        <origin xyz="0 0 ${-upper_l/2}" rpy="0 0 0"/>
+      </xacro:inertial_cylinder_z>
+    </link>
+
+    <!-- ====== ELBOW joint + FOREARM link ====== -->
+    <joint name="${prefix}_elbow_joint" type="${jtype}">
+      <parent link="${prefix}_upper_arm_link"/>
+      <child  link="${prefix}_forearm_link"/>
+      <origin xyz="0 0 ${-upper_l}" rpy="0 ${home_elbow} 0"/>
+      <axis xyz="0 1 0"/>
+      <xacro:if value="${functional}">
+        <limit lower="-2.8" upper="2.8" effort="12.0" velocity="2.0"/>
+        <dynamics damping="0.5" friction="2.0"/>
+      </xacro:if>
+    </joint>
+
+    <link name="${prefix}_forearm_link">
+      <visual>
+        <origin xyz="0 0 ${-fore_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${fore_r}" length="${fore_l}"/></geometry>
+        <material name="${mat}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-fore_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${fore_r}" length="${fore_l}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder_z
+          mass="${arm_density * pi * fore_r * fore_r * fore_l}"
+          r="${fore_r}" h="${fore_l}">
+        <origin xyz="0 0 ${-fore_l/2}" rpy="0 0 0"/>
+      </xacro:inertial_cylinder_z>
+    </link>
+
+    <!-- ====== WRIST joint + WRIST link ====== -->
+    <joint name="${prefix}_wrist_joint" type="${jtype}">
+      <parent link="${prefix}_forearm_link"/>
+      <child  link="${prefix}_wrist_link"/>
+      <origin xyz="0 0 ${-fore_l}" rpy="0 ${home_wrist} 0"/>
+      <axis xyz="0 1 0"/>
+      <xacro:if value="${functional}">
+        <limit lower="-2.0" upper="2.0" effort="8.0" velocity="2.5"/>
+        <dynamics damping="0.3" friction="1.0"/>
+      </xacro:if>
+    </joint>
+
+    <link name="${prefix}_wrist_link">
+      <visual>
+        <origin xyz="0 0 ${-wrist_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${wrist_r}" length="${wrist_l}"/></geometry>
+        <material name="${mat}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-wrist_l/2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${wrist_r}" length="${wrist_l}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder_z
+          mass="${arm_density * pi * wrist_r * wrist_r * wrist_l}"
+          r="${wrist_r}" h="${wrist_l}">
+        <origin xyz="0 0 ${-wrist_l/2}" rpy="0 0 0"/>
+      </xacro:inertial_cylinder_z>
+    </link>
+
+    <!-- ====== GRIPPER BASE (fixed to wrist) ====== -->
+    <joint name="${prefix}_gripper_fix" type="fixed">
+      <parent link="${prefix}_wrist_link"/>
+      <child  link="${prefix}_gripper_base_link"/>
+      <origin xyz="0 0 ${-wrist_l - grip_z/2}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="${prefix}_gripper_base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${grip_x} ${grip_y} ${grip_z}"/></geometry>
+        <material name="gripper_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${grip_x} ${grip_y} ${grip_z}"/></geometry>
+      </collision>
+      <xacro:inertial_box
+          mass="${grip_density * grip_x * grip_y * grip_z}"
+          l="${grip_x}" w="${grip_y}" h="${grip_z}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:inertial_box>
+    </link>
+
+    <!-- ====== FINGERS (prismatic) ======
+         Both functional even on cosmetic arm (fixed) — on cosmetic side
+         the type collapses to fixed so they don't move.
+    -->
+    <xacro:property name="ftype" value="${'prismatic' if functional else 'fixed'}"/>
+
+    <joint name="${prefix}_finger_left_joint" type="${ftype}">
+      <parent link="${prefix}_gripper_base_link"/>
+      <child  link="${prefix}_finger_left_link"/>
+      <origin xyz="0 ${finger_y0} ${-grip_z/2 - finger_z/2}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <xacro:if value="${functional}">
+        <limit lower="0" upper="${finger_travel}" effort="30.0" velocity="0.1"/>
+        <dynamics damping="10.0" friction="1.0"/>
+      </xacro:if>
+    </joint>
+
+    <link name="${prefix}_finger_left_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${finger_x} ${finger_y} ${finger_z}"/></geometry>
+        <material name="gripper_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${finger_x} ${finger_y} ${finger_z}"/></geometry>
+      </collision>
+      <xacro:inertial_box
+          mass="${finger_density * finger_x * finger_y * finger_z}"
+          l="${finger_x}" w="${finger_y}" h="${finger_z}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:inertial_box>
+    </link>
+
+    <joint name="${prefix}_finger_right_joint" type="${ftype}">
+      <parent link="${prefix}_gripper_base_link"/>
+      <child  link="${prefix}_finger_right_link"/>
+      <origin xyz="0 ${-finger_y0} ${-grip_z/2 - finger_z/2}" rpy="0 0 0"/>
+      <axis xyz="0 -1 0"/>
+      <xacro:if value="${functional}">
+        <limit lower="0" upper="${finger_travel}" effort="30.0" velocity="0.1"/>
+        <dynamics damping="10.0" friction="1.0"/>
+      </xacro:if>
+    </joint>
+
+    <link name="${prefix}_finger_right_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${finger_x} ${finger_y} ${finger_z}"/></geometry>
+        <material name="gripper_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="${finger_x} ${finger_y} ${finger_z}"/></geometry>
+      </collision>
+      <xacro:inertial_box
+          mass="${finger_density * finger_x * finger_y * finger_z}"
+          l="${finger_x}" w="${finger_y}" h="${finger_z}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:inertial_box>
+    </link>
+
+    <!-- ===== Gazebo surface tags =====
+         Arm links: mild friction; finger pads: high friction to grip. -->
+    <gazebo reference="${prefix}_upper_arm_link"><material>Gazebo/Grey</material></gazebo>
+    <gazebo reference="${prefix}_forearm_link">  <material>Gazebo/Grey</material></gazebo>
+    <gazebo reference="${prefix}_wrist_link">    <material>Gazebo/Grey</material></gazebo>
+    <gazebo reference="${prefix}_gripper_base_link">
+      <material>Gazebo/Orange</material>
+    </gazebo>
+    <gazebo reference="${prefix}_finger_left_link">
+      <material>Gazebo/Orange</material>
+      <mu1>1.5</mu1><mu2>1.5</mu2><kp>1e6</kp><kd>100</kd>
+      <minDepth>0.0005</minDepth>
+    </gazebo>
+    <gazebo reference="${prefix}_finger_right_link">
+      <material>Gazebo/Orange</material>
+      <mu1>1.5</mu1><mu2>1.5</mu2><kp>1e6</kp><kd>100</kd>
+      <minDepth>0.0005</minDepth>
+    </gazebo>
+
+  </xacro:macro>
+
+</robot>

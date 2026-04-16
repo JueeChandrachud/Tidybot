@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!--
+  Inertia macros. Formulas match scripts/compute_inertia.py so values are
+  reproducible and auditable. All shapes assume uniform density and
+  principal axes aligned with link frame (off-diagonal terms = 0).
+
+  Box: Ixx = m/12 (w^2 + h^2), Iyy = m/12 (l^2 + h^2), Izz = m/12 (l^2 + w^2)
+  Cylinder (symmetry axis = Y, i.e. a wheel rolling about Y):
+    Iyy = 1/2 m r^2
+    Ixx = Izz = m/12 (3 r^2 + h^2)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="inertial_box" params="mass l w h *origin">
+    <inertial>
+      <xacro:insert_block name="origin"/>
+      <mass value="${mass}"/>
+      <inertia
+        ixx="${mass/12.0 * (w*w + h*h)}" ixy="0" ixz="0"
+        iyy="${mass/12.0 * (l*l + h*h)}" iyz="0"
+        izz="${mass/12.0 * (l*l + w*w)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Cylinder whose symmetry (rotation) axis is Y. Used for wheels. -->
+  <xacro:macro name="inertial_cylinder_y" params="mass r h *origin">
+    <inertial>
+      <xacro:insert_block name="origin"/>
+      <mass value="${mass}"/>
+      <inertia
+        ixx="${mass/12.0 * (3*r*r + h*h)}" ixy="0" ixz="0"
+        iyy="${0.5 * mass * r * r}"        iyz="0"
+        izz="${mass/12.0 * (3*r*r + h*h)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Cylinder with symmetry axis along Z (vertical). -->
+  <xacro:macro name="inertial_cylinder_z" params="mass r h *origin">
+    <inertial>
+      <xacro:insert_block name="origin"/>
+      <mass value="${mass}"/>
+      <inertia
+        ixx="${mass/12.0 * (3*r*r + h*h)}" ixy="0" ixz="0"
+        iyy="${mass/12.0 * (3*r*r + h*h)}" iyz="0"
+        izz="${0.5 * mass * r * r}"/>
+    </inertial>
+  </xacro:macro>
+
+</robot>

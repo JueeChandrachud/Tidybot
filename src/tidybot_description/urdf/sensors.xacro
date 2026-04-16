@@ -1,0 +1,302 @@
+<?xml version="1.0"?>
+<!--
+  Sensor suite for TidyBot.
+
+  Links and Gazebo plugins:
+    lidar_mast_link  : thin cylinder from chassis top up past torso
+    lidar_link       : 2D LiDAR disc on top of mast  -> /scan
+    imu_link         : small box at chassis center   -> /imu
+    front_camera_link (+ optical frame)              -> /front_camera/*
+    torso_camera_link (+ optical frame)              -> /camera/*
+
+  Optical-frame convention (REP-103 vision):
+    z-forward, x-right, y-down in the optical frame.
+    The link frame is robot-native (x-forward, y-left, z-up).
+    Fixed rpy="-pi/2 0 -pi/2" converts between them.
+
+  All sensor links carry real (computed) inertial blocks so Gazebo
+  never sees placeholder mass. Cameras/LiDAR are attached with fixed
+  joints.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ======================================================
+       2D LiDAR
+       Mounted directly on chassis top, front-of-torso. Low mount is
+       standard for 2D scanners like RPLiDAR/YDLIDAR. Trade-off: the
+       torso occludes the rear ~90° of the scan. Nav2 accepts this —
+       the costmap just treats the blocked arc as unknown.
+       ====================================================== -->
+  <xacro:property name="lidar_r"       value="0.040"/>
+  <xacro:property name="lidar_h"       value="0.040"/>
+  <xacro:property name="lidar_mass"    value="0.10"/>
+
+  <material name="lidar_black"><color rgba="0.05 0.05 0.05 1.0"/></material>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+    <!-- Top of chassis (base_link z = +0.06) + half lidar height.
+         x=+0.15 puts it in front of torso (torso front face at +0.10). -->
+    <origin xyz="0.15 0 ${0.06 + lidar_h/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="${lidar_r}" length="${lidar_h}"/></geometry>
+      <material name="lidar_black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="${lidar_r}" length="${lidar_h}"/></geometry>
+    </collision>
+    <xacro:inertial_cylinder_z mass="${lidar_mass}" r="${lidar_r}" h="${lidar_h}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder_z>
+  </link>
+
+  <gazebo reference="lidar_link">
+    <material>Gazebo/Black</material>
+    <sensor type="ray" name="lidar_sensor">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>true</visualize>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <!-- 200 deg forward wedge (-100 deg to +100 deg). The
+                 rear ~160 deg is blocked by the torso/chassis anyway,
+                 and self-hits were drawing the robot as a wall in the
+                 slam_toolbox map. Keeping 1 deg resolution -> 200
+                 samples total. -->
+            <samples>200</samples>
+            <resolution>1</resolution>
+            <min_angle>-1.7453</min_angle>
+            <max_angle> 1.7453</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>10.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="lidar_plugin" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <remapping>~/out:=scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>lidar_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ======================================================
+       IMU
+       ====================================================== -->
+  <xacro:property name="imu_s" value="0.03"/>
+  <xacro:property name="imu_mass" value="0.02"/>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${imu_s} ${imu_s} ${imu_s}"/></geometry>
+      <material name="face_blue"/>
+    </visual>
+    <xacro:inertial_box mass="${imu_mass}" l="${imu_s}" w="${imu_s}" h="${imu_s}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <gazebo reference="imu_link">
+    <gravity>true</gravity>
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <visualize>false</visualize>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2.0e-4</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2.0e-4</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2.0e-4</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <plugin name="imu_plugin" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <remapping>~/out:=imu</remapping>
+        </ros>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+        <frame_name>imu_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ======================================================
+       FRONT GROUND CAMERA (user's chosen 4th sensor)
+       Tilted 20° down, on chassis front, to see floor objects
+       for pick-and-place targeting.
+       ====================================================== -->
+  <xacro:property name="fcam_x" value="0.04"/>
+  <xacro:property name="fcam_y" value="0.06"/>
+  <xacro:property name="fcam_z" value="0.03"/>
+  <xacro:property name="fcam_mass" value="0.05"/>
+  <xacro:property name="fcam_pitch" value="0.35"/>  <!-- ~20 deg down -->
+
+  <material name="fcam_green"><color rgba="0.10 0.80 0.30 1.0"/></material>
+
+  <joint name="front_camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="front_camera_link"/>
+    <!-- front face of chassis: x=+chassis_l/2=+0.225; z=+0.02 above center -->
+    <origin xyz="0.225 0 0.02" rpy="0 ${fcam_pitch} 0"/>
+  </joint>
+
+  <link name="front_camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${fcam_x} ${fcam_y} ${fcam_z}"/></geometry>
+      <material name="fcam_green"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${fcam_x} ${fcam_y} ${fcam_z}"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="${fcam_mass}" l="${fcam_x}" w="${fcam_y}" h="${fcam_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <!-- Optical frame (z-forward, x-right, y-down) -->
+  <joint name="front_camera_optical_joint" type="fixed">
+    <parent link="front_camera_link"/>
+    <child  link="front_camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <link name="front_camera_optical_frame"/>
+
+  <gazebo reference="front_camera_link">
+    <material>Gazebo/Green</material>
+    <sensor type="camera" name="front_camera">
+      <update_rate>15.0</update_rate>
+      <visualize>false</visualize>
+      <camera name="head">
+        <horizontal_fov>1.2</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip><near>0.05</near><far>6.0</far></clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="front_camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/front_camera</namespace>
+          <remapping>image_raw:=image_raw</remapping>
+          <remapping>camera_info:=camera_info</remapping>
+        </ros>
+        <camera_name>front_camera</camera_name>
+        <frame_name>front_camera_optical_frame</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ======================================================
+       TORSO RGB-D CAMERA (primary perception sensor)
+       Publishes:
+         /camera/image_raw        (sensor_msgs/Image)
+         /camera/depth/image_raw  (sensor_msgs/Image, float32 depth)
+         /camera/depth/points     (sensor_msgs/PointCloud2)
+         /camera/camera_info      (sensor_msgs/CameraInfo)
+       ====================================================== -->
+  <xacro:property name="tcam_x" value="0.04"/>
+  <xacro:property name="tcam_y" value="0.10"/>
+  <xacro:property name="tcam_z" value="0.03"/>
+  <xacro:property name="tcam_mass" value="0.08"/>
+
+  <material name="tcam_red"><color rgba="0.80 0.10 0.10 1.0"/></material>
+
+  <joint name="torso_camera_joint" type="fixed">
+    <parent link="torso_link"/>
+    <child  link="torso_camera_link"/>
+    <!-- Upper-middle of torso front face. Torso half-length is 0.10, so
+         +0.11 x puts camera just proud of the front. z=+0.15 is about
+         two-thirds up the torso. -->
+    <origin xyz="0.11 0 0.15" rpy="0 0 0"/>
+  </joint>
+
+  <link name="torso_camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${tcam_x} ${tcam_y} ${tcam_z}"/></geometry>
+      <material name="tcam_red"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${tcam_x} ${tcam_y} ${tcam_z}"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="${tcam_mass}" l="${tcam_x}" w="${tcam_y}" h="${tcam_z}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <joint name="torso_camera_optical_joint" type="fixed">
+    <parent link="torso_camera_link"/>
+    <child  link="torso_camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <link name="torso_camera_optical_frame"/>
+
+  <gazebo reference="torso_camera_link">
+    <material>Gazebo/Red</material>
+    <sensor type="depth" name="torso_rgbd">
+      <update_rate>15.0</update_rate>
+      <visualize>false</visualize>
+      <camera name="rgbd">
+        <horizontal_fov>1.2</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip><near>0.1</near><far>8.0</far></clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="torso_rgbd_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/camera</namespace>
+        </ros>
+        <camera_name>rgbd</camera_name>
+        <frame_name>torso_camera_optical_frame</frame_name>
+        <min_depth>0.1</min_depth>
+        <max_depth>8.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+</robot>

@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!--
+  Torso: vertical box fixed on top of the chassis.
+  Face panel: visual-only rectangular slab on top of torso.
+  Arms: instantiates the arm macro on both sides (right=functional,
+        left=cosmetic with fixed joints).
+
+  Frame convention (torso_link origin = torso geometric center):
+    +X forward, +Y left, +Z up.
+  Torso bottom at world z = chassis_top = 0.20; torso center z ≈ 0.425.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== Torso dimensions ===== -->
+  <xacro:property name="torso_l" value="0.20"/>
+  <xacro:property name="torso_w" value="0.30"/>
+  <xacro:property name="torso_h" value="0.45"/>
+  <xacro:property name="torso_density" value="300"/>
+  <xacro:property name="torso_mass"
+                  value="${torso_density * torso_l * torso_w * torso_h}"/>
+
+  <!-- Face panel (visual dominant, small mass). Mounted on top of torso. -->
+  <xacro:property name="face_l" value="0.02"/>
+  <xacro:property name="face_w" value="0.18"/>
+  <xacro:property name="face_h" value="0.15"/>
+  <xacro:property name="face_mass" value="0.15"/>
+
+  <!-- Shoulder mount in torso frame: upper third, just outside torso side. -->
+  <xacro:property name="shoulder_z" value="0.12"/>
+  <xacro:property name="shoulder_y" value="${torso_w/2 + 0.02}"/>
+
+  <material name="torso_grey"><color rgba="0.30 0.32 0.35 1.0"/></material>
+  <material name="face_blue"><color rgba="0.10 0.55 0.90 1.0"/></material>
+
+  <!-- ===== Torso link fixed atop chassis ===== -->
+  <joint name="torso_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="torso_link"/>
+    <!-- chassis top in base_link frame is +chassis_h/2 = 0.06.
+         Torso bottom rests on that, torso center at 0.06 + torso_h/2. -->
+    <origin xyz="0 0 ${chassis_h/2 + torso_h/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="torso_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${torso_l} ${torso_w} ${torso_h}"/></geometry>
+      <material name="torso_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${torso_l} ${torso_w} ${torso_h}"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="${torso_mass}"
+                        l="${torso_l}" w="${torso_w}" h="${torso_h}">
+      <!-- CoM offset 5 cm down in torso frame to keep CoG low. -->
+      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <gazebo reference="torso_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <!-- ===== Face panel (visual dominant, tiny mass) ===== -->
+  <joint name="face_joint" type="fixed">
+    <parent link="torso_link"/>
+    <child  link="face_link"/>
+    <!-- Sits on top of torso, slightly forward, like a tablet-head. -->
+    <origin xyz="${torso_l/2 - face_l/2 - 0.01} 0 ${torso_h/2 + face_h/2}"
+            rpy="0 0 0"/>
+  </joint>
+
+  <link name="face_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${face_l} ${face_w} ${face_h}"/></geometry>
+      <material name="face_blue"/>
+    </visual>
+    <!-- No collision: visual-only per spec. -->
+    <xacro:inertial_box mass="${face_mass}"
+                        l="${face_l}" w="${face_w}" h="${face_h}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <gazebo reference="face_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+
+  <!-- ===== Arms =====
+       Right arm: functional (real revolute + prismatic joints).
+       Left  arm: cosmetic (all joints collapsed to fixed).
+  -->
+  <xacro:arm prefix="right"
+             mount_xyz="0 ${-shoulder_y} ${shoulder_z}"
+             functional="true"/>
+
+  <xacro:arm prefix="left"
+             mount_xyz="0 ${ shoulder_y} ${shoulder_z}"
+             functional="false"/>
+
+</robot>

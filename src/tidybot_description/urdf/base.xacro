@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<!--
+  Mobile base: rectangular chassis + 4 actuated wheels (skid-steer).
+
+  Coordinate convention:
+    +X forward, +Y left, +Z up (REP-103).
+
+  Frame placement:
+    base_footprint  : massless frame at z=0 (on the ground), for Nav2/TF.
+    base_link       : chassis geometric center.
+    Wheel centers at z = wheel_radius so wheel bottoms touch z=0.
+    Chassis bottom at z = wheel_radius + ground_clearance - (chassis_h/2)
+    offset; we choose chassis center z = 0.14 so bottom is at 0.08 =
+    wheel_radius  →  wheels flush with chassis underside, 0 ground
+    clearance under chassis but wheels protrude to sides.
+
+  Material densities (kg/m^3):
+    chassis 700   (plastic shell + mixed internals; battery modeled
+                   implicitly by offsetting CoM slightly toward bottom)
+    wheel  1100   (rubber-ish)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== Dimensions ===== -->
+  <xacro:property name="chassis_l" value="0.45"/>
+  <xacro:property name="chassis_w" value="0.35"/>
+  <xacro:property name="chassis_h" value="0.12"/>
+  <xacro:property name="chassis_density" value="700"/>
+  <xacro:property name="chassis_mass"
+                  value="${chassis_density * chassis_l * chassis_w * chassis_h}"/>
+
+  <xacro:property name="wheel_r" value="0.08"/>
+  <xacro:property name="wheel_h" value="0.04"/>
+  <xacro:property name="wheel_density" value="1100"/>
+  <xacro:property name="wheel_mass"
+                  value="${wheel_density * pi * wheel_r * wheel_r * wheel_h}"/>
+
+  <!-- Wheel placement: at corners, slightly outside chassis sides. -->
+  <xacro:property name="wheel_x" value="0.15"/>
+  <xacro:property name="wheel_y"
+                  value="${chassis_w/2 + wheel_h/2 + 0.005}"/>
+
+  <!-- chassis_center_z chosen so wheel axles sit at z = wheel_r. -->
+  <xacro:property name="chassis_center_z" value="0.14"/>
+
+  <!-- ===== Materials ===== -->
+  <material name="chassis_grey"><color rgba="0.25 0.25 0.28 1.0"/></material>
+  <material name="wheel_black">  <color rgba="0.05 0.05 0.05 1.0"/></material>
+
+  <!-- ===== base_footprint → base_link ===== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${chassis_center_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${chassis_l} ${chassis_w} ${chassis_h}"/></geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${chassis_l} ${chassis_w} ${chassis_h}"/></geometry>
+    </collision>
+    <!-- CoM offset 2 cm below center to simulate battery low in chassis -->
+    <xacro:inertial_box mass="${chassis_mass}"
+                        l="${chassis_l}" w="${chassis_w}" h="${chassis_h}">
+      <origin xyz="0 0 -0.02" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <gazebo reference="base_link">
+    <material>Gazebo/DarkGrey</material>
+    <mu1>0.3</mu1>
+    <mu2>0.3</mu2>
+  </gazebo>
+
+  <!-- ===== Wheel macro =====
+       side: "left" or "right"  (sign of Y)
+       end : "front" or "rear"  (sign of X)
+  -->
+  <xacro:macro name="wheel" params="name x y">
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_h}"/></geometry>
+        <material name="wheel_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_h}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder_y mass="${wheel_mass}"
+                                 r="${wheel_r}" h="${wheel_h}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:inertial_cylinder_y>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child  link="${name}_link"/>
+      <!-- Wheel center placed so z_world = wheel_r. Since base_link is
+           at z=chassis_center_z, the wheel must be at z=wheel_r-chassis_center_z
+           in base_link frame. -->
+      <origin xyz="${x} ${y} ${wheel_r - chassis_center_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.15" friction="0.05"/>
+      <limit effort="20.0" velocity="12.0"/>
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <material>Gazebo/Black</material>
+      <!-- High surface friction so wheels grip, low rolling resistance via
+           soft contact constants. kp/kd chosen for stable contact at 1 kHz. -->
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1.0e6</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+      <maxVel>1.0</maxVel>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:wheel name="wheel_fl" x="${ wheel_x}" y="${ wheel_y}"/>
+  <xacro:wheel name="wheel_fr" x="${ wheel_x}" y="${-wheel_y}"/>
+  <xacro:wheel name="wheel_rl" x="${-wheel_x}" y="${ wheel_y}"/>
+  <xacro:wheel name="wheel_rr" x="${-wheel_x}" y="${-wheel_y}"/>
+
+</robot>
